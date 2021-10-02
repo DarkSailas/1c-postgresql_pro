@@ -1,0 +1,121 @@
+version: "3.7"
+
+services:
+  database:
+    container_name: postgresql
+    image: silverbulleters/ya-docker-postgresql-1c:latest
+    restart: always
+    networks:
+      - pgdb_network
+    environment:
+      - USETMPFS_FOR_TMP=true
+      - DEBUG=false
+      - DB_NAME=mamonsu,powa
+      - POWA_DATABASE=powa
+      - PG_TUNE_BY_MAMONSU=true
+      - PG_MAX_CONNECTION=130
+      - PG_TIMEZONE=Asia/Chita   #таймзона своя, чисто для удобства
+    env_file:
+      ./.env
+    ports: 
+      - target: 5432
+        published: 5432
+        protocol: tcp
+        mode: host
+    volumes:
+      - ./bases:/var/lib/pgpro/1c-12/data
+      - ./pgdata:/var/lib/pgpro/v81c_data
+      - ./pgindex:/var/lib/pgpro/v81c_index
+      - ./pglog:/var/log/postgresql
+      - ./scripts:/scripts
+      - /backups:/backups      #каталог к бэкапам естессно свой
+
+  sqlbak:
+    container_name: sqlbak
+    image: pranasnet/sqlbak
+    restart: always
+    volumes:
+      - ./sqlbak:/opt/sqlbak 
+      - /backups:/tmp/sqlbak    #каталог к бэкапам естессно свой
+      - /backups:/backups       #каталог к бэкапам естессно свой
+    environment:
+      sqlbak_key: #sql_bak_site_key
+      sqlbak_name: #sqlbak_site_name
+      db_type: postgresql
+      user: postgres
+      password: test
+      host: postgresql
+    networks:
+      - pgdb_network
+
+  pgadmin:
+    container_name: pgadmin
+    image: dpage/pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: #admin_email
+      PGADMIN_DEFAULT_PASSWORD: #admin_pass
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+       - ./pgadmin:/var/lib/pgadmin
+       - /backups:/backups
+    ports:
+      - 5050:80
+
+  ofelia:
+    container_name: ofelia
+    image: mcuadros/ofelia:latest
+    #restart: always
+    networks:
+      - pgdb_network
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./ofelia.ini:/etc/ofelia/config.ini         #у офелии "прекрасное" использование cron расписания, нужно читать на докер хабе
+
+  pghero:
+    container_name: pghero
+    image: ankane/pghero
+    #restart: always
+    networks:
+      - pgdb_network
+    environment:
+      - DATABASE_URL=postgres://postgres:test@postgresql:5432/skuter
+    ports:
+      - 10000:8080
+
+  powa-repository:
+    container_name: powa-standalone-repository
+    image: powateam/powa-archivist-12
+    #restart: always
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: 'trust'
+      POWA_EXTRA_SQL: >
+        DROP EXTENSION pg_stat_kcache;
+        DROP EXTENSION pg_qualstats;
+        DROP EXTENSION pg_track_settings;
+        DROP EXTENSION powa;
+        DROP EXTENSION pg_wait_sampling;
+        CREATE EXTENSION powa;
+
+  powa-web:
+    container_name: powa-standalone-web
+    image: powateam/powa-web
+    #restart: always
+    ports:
+      - 8888:8888
+    links:
+      - powa-repository
+
+networks:
+  pgdb_network:
+    attachable: true
+
+volumes:
+   bases:
+   pgdata:
+   pgindex:
+   pglog:
+   scripts:
+   backups:
